@@ -56,6 +56,14 @@ def get_and_update_words():
     else:
         raise HTTPException(status_code=500, detail="No words found in the database")
 
+@app.get("/get-emails")
+async def get_emails():
+    try:
+        emails = list(emails_collection.find({}, {"_id": 0}))
+        return emails
+    except ConnectionFailure:
+        raise HTTPException(status_code=500, detail="Failed to connect to the database")
+
 @app.post("/receive-email")
 async def receive_email(email: Email):
     try:
@@ -63,6 +71,16 @@ async def receive_email(email: Email):
             return {"message": "Email already exists"}
         emails_collection.insert_one(email.dict())
         return {"message": "Email received and stored successfully"}
+    except ConnectionFailure:
+        raise HTTPException(status_code=500, detail="Failed to connect to the database")
+
+@app.post("/unsubscribe")
+async def unsubscribe(email: Email):
+    try:
+        result = emails_collection.delete_one({"address": email.address})
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Email not found")
+        return {"message": "Email unsubscribed successfully"}
     except ConnectionFailure:
         raise HTTPException(status_code=500, detail="Failed to connect to the database")
 
@@ -230,4 +248,3 @@ async def send_emails():
         raise HTTPException(status_code=500, detail="Failed to connect to the database")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
