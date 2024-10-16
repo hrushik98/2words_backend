@@ -247,4 +247,4 @@ async def send_emails():
     except ConnectionFailure:
         raise HTTPException(status_code=500, detail="Failed to connect to the database")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(words_with_meanings))
