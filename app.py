@@ -201,7 +201,7 @@ async def send_emails():
                 </div>
 
                 <footer>
-                    Delivered to you with ❤️ by 2Words | Enhance your vocabulary daily | <a href="http://localhost:8000/unsubscribe">Unsubscribe</a>
+                    Delivered to you with ❤️ by 2Words | Enhance your vocabulary daily | <a href="https://2words.vercel.com/unsubscribe">Unsubscribe</a>
                 </footer>
             </div>
 
