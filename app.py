@@ -4,7 +4,6 @@ import logging
 from pydantic import BaseModel, EmailStr
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
-import json
 import random
 from openai import OpenAI
 import smtplib
@@ -17,7 +16,8 @@ load_dotenv()
 
 MONGO_URI = os.getenv("MONGO_URI")
 DB_NAME = os.getenv("DB_NAME")
-COLLECTION_NAME = os.getenv("COLLECTION_NAME")
+WORDS_COLLECTION_NAME = "words_collection"  # New words collection
+EMAIL_COLLECTION_NAME = os.getenv("COLLECTION_NAME")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
@@ -33,38 +33,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
-collection = db[COLLECTION_NAME]
+emails_collection = db[EMAIL_COLLECTION_NAME]
+words_collection = db[WORDS_COLLECTION_NAME]  # Collection for words
+
 class Email(BaseModel):
     address: EmailStr
+
+# Function to get words from MongoDB and update after use
+def get_and_update_words():
+    document = words_collection.find_one({})
+    if document:
+        words_dict = document["words"]
+        words = list(words_dict.values())
+        selected_words = random.sample(words, 2)
+        for word in selected_words:
+            words.remove(word)
+        updated_words_dict = {str(i): word for i, word in enumerate(words)}
+        words_collection.update_one({}, {"$set": {"words": updated_words_dict}})
+        return selected_words
+    else:
+        raise HTTPException(status_code=500, detail="No words found in the database")
 
 @app.post("/receive-email")
 async def receive_email(email: Email):
     try:
-        if collection.find_one({"address": email.address}):
+        if emails_collection.find_one({"address": email.address}):
             return {"message": "Email already exists"}
-        collection.insert_one(email.dict())
+        emails_collection.insert_one(email.dict())
         return {"message": "Email received and stored successfully"}
-    except ConnectionFailure:
-        raise HTTPException(status_code=500, detail="Failed to connect to the database")
-@app.get("/get-emails")
-async def get_emails():
-    try:
-        emails = list(collection.find({}, {"_id": 0}))
-        return emails
-    except ConnectionFailure:
-        raise HTTPException(status_code=500, detail="Failed to connect to the database")
-
-@app.post("/unsubscribe")
-async def unsubscribe(email: Email):
-    try:
-        result = collection.delete_one({"address": email.address})
-        if result.deleted_count == 0:
-            raise HTTPException(status_code=404, detail="Email not found")
-        return {"message": "Email unsubscribed successfully"}
     except ConnectionFailure:
         raise HTTPException(status_code=500, detail="Failed to connect to the database")
 
@@ -72,15 +70,10 @@ async def unsubscribe(email: Email):
 async def send_emails():
     try:
         openai_client = OpenAI(api_key=OPENAI_API_KEY)
-        with open('words.json', 'r') as file:
-            words_dict = json.load(file)
-        words = list(words_dict.values())
-        selected_words = random.sample(words, 2)
-        for word in selected_words:
-            words.remove(word)
-        updated_words_dict = {str(i): word for i, word in enumerate(words)}
-        with open('words.json', 'w') as file:
-            json.dump(updated_words_dict, file)
+        
+        # Fetch and update words from MongoDB
+        selected_words = get_and_update_words()
+        
         user_p = f"""
         [
             {{"word": "{selected_words[0]}", "definition": "", "example": ""}},
@@ -209,7 +202,7 @@ async def send_emails():
         </html>
         """
 
-        emails = list(collection.find({}, {"_id": 0, "address": 1}))
+        emails = list(emails_collection.find({}, {"_id": 0, "address": 1}))
         email = EMAIL_ADDRESS
         password = EMAIL_PASSWORD  # Be cautious when handling sensitive information like passwords
 
@@ -237,3 +230,4 @@ async def send_emails():
         raise HTTPException(status_code=500, detail="Failed to connect to the database")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
